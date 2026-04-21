@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>ESP32 Satellite Tracker</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        :root {
+            --bg: #0d0f0e;
+            --accent: #4cff91;
+            --border: #2a3329;
+            --panel: #111512;
+            --radius: 12px;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--accent);
+            font-family: monospace;
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            gap: 20px;
+        }
+
+        .main-container {
+            display: flex;
+            flex: 1;
+            gap: 20px;
+            min-height: 0;
+        }
+
+        #sidebar {
+            flex: 1;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            overflow-y: auto;
+        }
+
+        #map {
+            flex: 2.5;
+            background: #111;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+        }
+
+        #console {
+            height: 180px;
+            background: #000;
+            overflow-y: auto;
+            padding: 20px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            font-size: 13px;
+        }
+
+        .sat-btn {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--accent);
+            padding: 12px;
+            cursor: pointer;
+            text-align: left;
+            font-family: monospace;
+            border-radius: 8px;
+            transition: 0.2s;
+        }
+
+        .sat-btn:hover {
+            background: rgba(76, 255, 145, 0.1);
+            border-color: var(--accent);
+        }
+
+        .sat-btn span {
+            color: #5a7055;
+            font-size: 10px;
+            display: block;
+            margin-top: 4px;
+        }
+
+        .ts {
+            color: #5a7055;
+            margin-right: 10px;
+        }
+
+        .log-entry {
+            margin-bottom: 6px;
+        }
+
+        h3 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            text-transform: uppercase;
+            color: #5a7055;
+        }
+
+        .leaflet-marker-icon {
+            transition: all 1.1s linear;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="main-container">
+        <div id="sidebar">
+            <h3>Target Selection</h3>
+            <div id="sat-list" style="display: flex; flex-direction: column; gap: 10px;"></div>
+        </div>
+        <div id="map"></div>
+    </div>
+    <div id="console"></div>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        const map = L.map('map').setView([0, 0], 2);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        const marker = L.marker([0, 0]).addTo(map);
+        const gateway = `ws://${window.location.hostname}/ws`;
+        let socket;
+        let positionBuffer = [];
+        let playbackInterval;
+        let activeSatName = "Unknown";
+
+        async function loadSats() {
+            try {
+                const response = await fetch('/sats.json');
+                const sats = await response.json();
+                const container = document.getElementById('sat-list');
+                sats.forEach(sat => {
+                    const btn = document.createElement('button');
+                    btn.className = 'sat-btn';
+                    btn.innerHTML = `${sat.name} <span>NORAD ID: ${sat.id}</span>`;
+                    btn.onclick = () => socket.send(`TRACK:${sat.id}`);
+                    container.appendChild(btn);
+                });
+            } catch (e) { console.error("JSON Error"); }
+        }
+
+        function startPlayback() {
+            clearInterval(playbackInterval);
+            playbackInterval = setInterval(() => {
+                if (positionBuffer.length > 0) {
+                    const next = positionBuffer.shift();
+                    const pos = [next.satlatitude, next.satlongitude];
+
+                    marker.setLatLng(pos);
+                    map.panTo(pos);
+
+                    const consoleEl = document.getElementById('console');
+                    consoleEl.innerHTML += `<div class="log-entry">
+                    <span class="ts">[${new Date().toLocaleTimeString()}]</span> 
+                    <strong>${activeSatName}</strong>: ${next.satlatitude.toFixed(4)}, ${next.satlongitude.toFixed(4)}
+                </div>`;
+                    consoleEl.scrollTop = consoleEl.scrollHeight;
+                }
+            }, 1000);
+        }
+
+        function initWebSocket() {
+            socket = new WebSocket(gateway);
+            socket.onopen = () => { document.getElementById('console').innerHTML += '<div class="log-entry">> SYNCED</div>'; };
+            socket.onclose = () => setTimeout(initWebSocket, 2000);
+            socket.onmessage = function (event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.positions && data.info) {
+                        activeSatName = data.info.satname; /
+                        positionBuffer = data.positions;
+                        startPlayback();
+                    }
+                } catch (e) {
+                    document.getElementById('console').innerHTML += `<div class="log-entry">> ${event.data}</div>`;
+                }
+            };
+        }
+        window.onload = () => { initWebSocket(); loadSats(); };
+    </script>
+</body>
+
+</html>
