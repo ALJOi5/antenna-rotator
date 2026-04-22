@@ -1,0 +1,10 @@
+{
+    "fallback-coords": {
+        "lat": 46.049358,
+        "lng": 14.503285,
+        "baseAlt": 297
+    },
+    "different-setting-category": {
+        "many-fields": 0
+    }
+}

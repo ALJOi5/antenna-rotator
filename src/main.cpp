@@ -12,10 +12,13 @@ const char *ssid = "A1-3AAFB1";
 const char *password = "zuqohu8423";
 const char *apiKey = "FYBCDW-Q3G3B5-JXBJ2R-5P18";
 
-float baseLat = 46.049358;
-float baseLong = 14.503285;
-int baseAlt = 297;
+float baseLat = 0;
+float baseLong = 0;
+int baseAlt = 0;
 bool gpsLocked = false;
+
+double currentAz = 0.00;
+double currentEl = 0.00;
 
 TinyGPSPlus gps;
 HardwareSerial GPS_Serial(2);
@@ -52,6 +55,13 @@ void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType 
     }
 }
 
+void pointToNorth() {
+    // bo vzelo kot argument referenco na objekta stepperAz in stepperEl
+    // TODO 
+    // magnetometr pove kakšen kot manjka do severa
+    // stepper1 se obrne za tok kot je magnetometer reku stepper2, tko je zdej na severu
+}
+
 void setup() {
     Serial.begin(115200);
     GPS_Serial.begin(38400, SERIAL_8N1, 25, 26);
@@ -61,6 +71,18 @@ void setup() {
         readGPS();
         delay(500);
     }
+
+    // load Configs
+    File file = LittleFS.open("/config.json", "r");
+    StaticJsonDocument<512> doc;
+    deserializeJson(doc, file);
+    file.close();
+
+    baseLat = doc["fallback-coords"]["lat"];
+    baseLong = doc["fallback-coords"]["lng"];
+    baseAlt = doc["fallback-coords"]["baseAlt"];
+
+
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
         request->send(LittleFS, "/index.html", "text/html");
     });
@@ -78,10 +100,35 @@ void setup() {
         serializeJson(doc, out);
         request->send(200, "application/json", out);
     });
+
+    server.on("/config.json", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL,
+    [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+        File file = LittleFS.open("/config.json", "w");
+        if (file) {
+            file.write(data, len);
+            file.close();
+        }
+        StaticJsonDocument<512> doc;
+        deserializeJson(doc, (char*)data);
+        if (!gpsLocked) {
+            baseLat  = doc["fallback-coords"]["lat"];
+            baseLong = doc["fallback-coords"]["lng"];
+            baseAlt  = doc["fallback-coords"]["baseAlt"];
+        }
+        request->send(200, "application/json", "{\"ok\":true}");
+    });
+    server.on("/config.json", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(LittleFS, "/config.json", "application/json");
+    });
+
     ws.onEvent(onEvent);
     server.addHandler(&ws);
     server.begin();
+
+    pointToNorth();
 }
+
+
 
 void loop() {
     readGPS();
