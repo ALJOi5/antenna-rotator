@@ -297,7 +297,7 @@
                     const next = positionBuffer.shift();
                     const pos = [next.satlatitude, next.satlongitude];
                     marker.setLatLng(pos);
-                    // map.panTo(pos);
+                    if (trackSat) {map.panTo(pos);}
                     const consoleEl = document.getElementById('console');
                     consoleEl.innerHTML += `<div class="log-entry">
                     <span class="ts">[${new Date().toLocaleTimeString()}]</span>
@@ -378,9 +378,15 @@
         function panHome() {
             map.flyTo(baseMarker.getLatLng(), 16);
         }
-
+        
+        let trackSat = false;
         function panSat() {
-            map.flyTo(marker.getLatLng(), 4)
+            trackSat = !trackSat;
+            const btn = document.querySelector('[onclick="panSat()"]');
+            btn.style.borderColor = trackSat ? 'var(--accent)' : 'var(--border)';
+            if (trackSat) {
+                map.flyTo(marker.getLatLng(), 4);
+            }
         }
 
         window.onload = () => {
